@@ -1,0 +1,22 @@
+{
+    "name": "AjisaiFlow.BoothPackageManager.Editor",
+    "rootNamespace": "AjisaiFlow.BoothPackageManager.Editor",
+    "references": [
+        "AjisaiFlow.MD3SDK.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "AjisaiFlow.BoothPackageManager.Editor.dll",
+        "BoothSDK.dll",
+        "Newtonsoft.Json.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
