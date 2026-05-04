@@ -2,6 +2,13 @@
 
 All notable changes to this VPM package.
 
+## [0.32.5] — 2026-05-05 (Phase 2 alpha hotfix #1)
+
+### Fixed
+
+- **マテリアルエラー (= shader compile fail) の致死 bug**: `LilToonIncludesPatcher.RedirectIncludePaths` と `LilToonShaderInjector.RewriteIncludePaths` で、 lilToon の patched .hlsl が `#include "UnityCG.cginc"` 等の **Unity built-in cginc** (CGIncludes/ にある) を相対参照していたが、 sourceDir + filename で誤って `Packages/jp.lilxyzw.liltoon/Shader/Includes/UnityCG.cginc` のような **存在しない絶対 path** に rewrite していた → `Couldn't open include file` で全 patched shader が compile fail。
+- **修正**: 相対 include を絶対 path 化する前に `File.Exists(resolved)` で **disk 上に存在するか check**。 存在しない (= UnityCG.cginc / AutoLight.cginc / Lighting.cginc / UnityMetaPass.cginc 等の Unity built-in) ならば original include を保持し、 Unity の CGIncludes search path に解決を任せる。
+
 ## [0.32.4] — 2026-05-05 (Phase 2 alpha — universal full coverage)
 
 ### Added (Phase 2: ~50+ properties に encryption 拡張)
