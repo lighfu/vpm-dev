@@ -2,6 +2,28 @@
 
 All notable changes to this VPM package.
 
+## [0.32.2] — 2026-05-05 (Phase 1 alpha hotfix)
+
+### Fixed
+
+- **UniversalRewrite mode で encryption が完全に skip されていた致死 bug**: 2 つの根本原因を fix:
+  1. **Import 順序 bug**: `LilToonShaderInjector.GenerateLockedVariant` で lts shader を ltspass shader より先に ImportAsset していた (= UsePass 依存解決順序逆)。 Legacy mode は既存 cache file で動作回避していたが universal mode の new hash で fresh compile すると `Shader.Find` が persistent に null 返却 → fallback で original material 維持 → encryption 完全失効。
+  2. **Phase 1 で OVERRIDE_* macro skip が早すぎた**: universal mode で OVERRIDE_*-per-spec macro emission を skip していたが、 Phase 1 では lilToon の `Includes/*.hlsl` 内 sample 呼出を rewrite する仕組みが未実装のため、 OVERRIDE_* skip = decode 経路完全消失 → 暗号化 texture が生 noise として render される結果に。 Phase 1 では OVERRIDE_* を **常時 emit** に戻し、 universal helper は **dead code として共存** させる (Phase 2 で Includes/ recursive walk 実装後に skip を有効化予定)。
+- **Shader.Find fallback 強化**: ImportAsset 直後の Shader.Find 失敗時に `AssetDatabase.LoadAssetAtPath<Shader>(ltsOutPath)` で直接 load を試みる fallback を追加。
+
+### Phase 1 alpha 完成度
+
+- LegacyOverride mode: v0.31.15 完全互換 (regression なし)
+- UniversalRewrite mode: 既存 3 properties (`_MainTex` / `_BumpMap` / `_AlphaMask`) に対する encryption が legacy と同等動作。 universal helper は dead code として shader 内に存在 (= Phase 2 で activate 予定)。
+
+## [0.32.1] — 2026-05-05
+
+### Added
+
+- AntiRippingTagEditor の Texture Pixel Encryption section に `EncryptionMode` dropdown UI 追加。
+- Strip Unencrypted Texture Refs / Acknowledge VRCFury Leak の toggle UI 追加。
+- UniversalRewrite mode 選択時の HelpBox + 「対象テクスチャ」 個別 toggle の disable scope。
+
 ## [0.32.0] — 2026-05-05 (Phase 1 alpha — universal pipeline 基盤)
 
 ### Added (Phase 1: pipeline 基盤、 既存 3 properties で動作検証)
