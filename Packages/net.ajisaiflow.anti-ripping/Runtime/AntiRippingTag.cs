@@ -189,6 +189,11 @@ namespace AjisaiFlow.AntiRipping
                  "v0.31.0 (MVP) では未実装。 v0.31.x で対応予定。")]
         [SerializeField] private bool encryptAlphaMask = true;
 
+        [Tooltip("v0.31.12: master が ON のとき有効: _EmissionMap (発光部) を暗号化する。\n" +
+                 "RGBA 全 channel に XOR。 lilToon の lilEmission 関数の代わりに decode 版 helper を呼び出し、\n" +
+                 "発光 texture を抽出時に noise 化する。")]
+        [SerializeField] private bool encryptEmissionMap = true;
+
         [Tooltip("暗号化 texture の最大解像度 (px、 縦横の長辺)。 これを超える元 texture は GPU Blit で\n" +
                  "downsample してから暗号化する。 AssetBundle サイズ膨張対策。\n" +
                  "・XOR PRNG decode は非可逆圧縮 (BC7/DXT5) と原理的に両立できないため encrypted texture は\n" +
@@ -389,6 +394,7 @@ namespace AjisaiFlow.AntiRipping
         public bool EncryptNormalMap => EnableTexturePixelEncryption && encryptNormalMap;
         public bool EncryptMain2nd => EnableTexturePixelEncryption && encryptMain2nd;
         public bool EncryptAlphaMask => EnableTexturePixelEncryption && encryptAlphaMask;
+        public bool EncryptEmissionMap => EnableTexturePixelEncryption && encryptEmissionMap;
         public int TextureEncryptionMaxResolution => Mathf.Clamp(textureEncryptionMaxResolution, 256, 8192);
         public bool CompressEncryptedTextureBC7 => compressEncryptedTextureBC7;
 
