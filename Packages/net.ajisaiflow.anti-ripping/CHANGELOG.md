@@ -2,6 +2,13 @@
 
 All notable changes to this VPM package.
 
+## [0.32.3] — 2026-05-05 (Phase 1 alpha hotfix #2)
+
+### Fixed
+
+- **UniversalRewrite mode で encryption は成功するが decode が失敗する致死 bug**: `TransformLtsPassContent` で `ApplyUniversalRewriteIfEnabled` を `InjectHookIntoHlslInclude` の **後** に呼んでいたため、 emit したばかりの OVERRIDE_MAIN macro 内部の `LIL_SAMPLE_2D_LOD(_MainTex, ...)` が rewriter に wrap されて `_AR_DecodedSample(LIL_SAMPLE_2D_LOD(_MainTex, ...), ...)` になっていた。 これで `_AR_DecodedSample` の decode 後に OVERRIDE_MAIN body の自前 XOR decode が **二重適用** され、 結果として **完全 noise** が描画されていた (= 「テクスチャは難読化されたが復元失敗」 の真因)。
+- **修正**: rewriter 適用を `InjectHookIntoHlslInclude` の **前** に移動。 元 lts.shader / ltspass.shader 内に LIL_SAMPLE_2D 呼出は 0 件 (Phase 1 では Includes/ recursive walk 未実装) のため、 rewriter は実質 no-op となり、 後で注入される OVERRIDE_* 内部 sample は touched されない。
+
 ## [0.32.2] — 2026-05-05 (Phase 1 alpha hotfix)
 
 ### Fixed
