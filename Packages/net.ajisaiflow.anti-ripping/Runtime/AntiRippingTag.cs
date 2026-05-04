@@ -189,14 +189,11 @@ namespace AjisaiFlow.AntiRipping
                  "v0.31.0 (MVP) では未実装。 v0.31.x で対応予定。")]
         [SerializeField] private bool encryptAlphaMask = true;
 
-        [Tooltip("v0.31.13: master が ON のとき有効: _EmissionMap (発光部) を暗号化する。\n" +
-                 "lilToon の OVERRIDE_EMISSION_1ST を inline 置換し、 UV mode 4 種 + emission blend は完全保持。\n" +
-                 "RGB channel に XOR (alpha は emission strength で乗算するため触らない)。\n" +
-                 "制約 (v0.31.13 simplified): _EmissionBlendMask / _EmissionGradTex / AudioLink は未対応\n" +
-                 "(= これらの feature を使う avatar では visual に微差が出る可能性。 default 動作に近い blend)。\n" +
-                 "対応 lilToon shader: NORMAL variant のみ (= LIL_LITE / LIL_MULTI 系は default 動作)。\n" +
-                 "v0.31.x で残り feature 完全対応予定。")]
-        [SerializeField] private bool encryptEmissionMap = true;
+        // v0.31.14 revert: encryptEmissionMap toggle は v0.31.13 で導入したが、
+        // OVERRIDE_EMISSION_1ST inline 展開が複数 lilToon variant で compile error
+        // (`fd.invLighting` / `fd.albedo` / `lilCalcBlink` 等が未定義) → 全 renderer 元 shader fallback
+        // → 全 texture 露出という致死 regression を起こしたため、 spec entry / 専用 builder と一緒に撤去。
+        // serialized field 自体も削除 (= v0.31.13 で保存された値は次の Save Project で消える、 機能無効のため無害)。
 
         [Tooltip("暗号化 texture の最大解像度 (px、 縦横の長辺)。 これを超える元 texture は GPU Blit で\n" +
                  "downsample してから暗号化する。 AssetBundle サイズ膨張対策。\n" +
@@ -411,8 +408,7 @@ namespace AjisaiFlow.AntiRipping
         public bool EncryptNormalMap => EnableTexturePixelEncryption && encryptNormalMap;
         public bool EncryptMain2nd => EnableTexturePixelEncryption && encryptMain2nd;
         public bool EncryptAlphaMask => EnableTexturePixelEncryption && encryptAlphaMask;
-        // v0.31.13: 追加 properties (Phase 1)
-        public bool EncryptEmissionMap => EnableTexturePixelEncryption && encryptEmissionMap;
+        // v0.31.14 revert: EncryptEmissionMap property は v0.31.13 で追加したが致死 regression のため撤去。
         // v0.31.12: locked variant material から暗号化対象外 texture 参照を剥がす (= leak 防止、 visual fidelity 損失あり)
         // EnableTexturePixelEncryption が ON でない時は意味がない (= 暗号化 texture 参照自体が無い) ので AND ゲート。
         public bool StripUnencryptedTextureRefs => EnableTexturePixelEncryption && stripUnencryptedTextureRefs;
