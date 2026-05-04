@@ -2,6 +2,36 @@
 
 All notable changes to this VPM package.
 
+## [0.32.0] — 2026-05-05 (Phase 1 alpha — universal pipeline 基盤)
+
+### Added (Phase 1: pipeline 基盤、 既存 3 properties で動作検証)
+
+- **Universal texture encryption pipeline 基盤**: lilToon の全 .hlsl の `LIL_SAMPLE_2D[*]` 呼出を encrypted property の場合に `_AR_DecodedSample(...)` で wrap する source rewrite engine を新設。
+  - `Editor/Pipeline/HlslSourceRewriter.cs`: 5 variants (LIL_SAMPLE_2D / _LOD / _BIAS / _GRAD / _ST) の regex + balanced-paren parse + comma split。 hit-miss detection で encrypted property に対する直接 sample 呼出残存を検出。
+  - `Editor/Pipeline/HlslIncludeWalker.cs`: shader source からの include 関係を recursive 解決、 38 file DAG + header guard 認識。
+  - `Editor/Pipeline/TexturePropertyDiscovery.cs`: source shader Properties block の全 Texture2D 宣言を regex で parse。
+  - `Editor/Pipeline/EncryptionContext.cs`: encryption mode + encrypted property set + cache key + hit-miss errors の context data class。
+  - `Editor/Pipeline/CacheJanitor.cs`: `Generated/Shaders/` 配下 7 日経過 stale file の build-start sweep。
+- **`EncryptionMode { LegacyOverride, UniversalRewrite }` enum** を `Runtime/AntiRippingTag.cs` に追加。 default = LegacyOverride (Phase 1 では既存動作維持)。
+- **`AcknowledgeVRCFuryLeak` opt-in flag**: VRCFury 検出時の build error / warning 抑制 (default OFF、 検出時に user 明示承認を要求する設計)。
+- **`LilToonShaderInjector.GenerateLockedVariant(Shader, LockedShaderMode, EncryptionContext)` overload**: universal pipeline 用 API。 既存呼出 `GenerateLockedVariant(Shader, LockedShaderMode)` は backward-compat (= encContext = null で LegacyOverride 互換)。
+- **`_AR_DecodedSample` HLSL helper**: fd 不参照 5 引数設計 (sampled / uv / seedLo / seedHi / texelSize / linearize) で全 lilToon variant matrix (NORMAL/LITE/MULTI/FUR/GEM/REF × Forward/Outline/Meta/Shadow) で compile 通る。 v0.31.13 emission 致死 regression を構造的回避。
+- **Cache key 拡張**: encryption mode + encrypted property set hash を追加し、 universal mode で property set が違えば別 generated shader を生成 (stale cache 構造的防止)。
+
+### Changed
+
+- `ShaderLockPass.Run` で tag.EncryptionMode に応じて `EncryptionContext` を構築、 `LilToonShaderInjector.GenerateLockedVariant` の universal overload に渡す。
+- AntiRippingPlugin.Apply 開始時に `CacheJanitor.SweepStaleFiles` を呼ぶ (= Editor 起動時 reimport 遅延 + line ending warning 緩和)。
+- Apply() 開始時の log dump に `EncryptionMode` を追加。
+
+### Phase 1 scope (= alpha 動作検証)
+
+- `EncryptionMode = UniversalRewrite` で既存 3 properties (`_MainTex` / `_BumpMap` / `_AlphaMask`) が universal pipeline 経由でも正常動作する verification。
+- HitMissErrors は warning log のみ (Phase 2+ で build error 化予定)。
+- Phase 2 で emission / matcap / outline / rim / 2nd / shadow tinting visual-critical properties に拡張予定。
+- Phase 3 で全 ~59 properties auto-discovery + `EncryptionMode.UniversalRewrite` を default 化予定。
+- Phase 4 (v0.34.0) で legacy OVERRIDE_*-per-property 完全削除予定。
+
 ## [0.31.15] — 2026-05-05
 
 ### Fixed

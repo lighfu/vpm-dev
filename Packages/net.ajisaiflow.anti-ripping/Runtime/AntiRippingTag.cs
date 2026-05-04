@@ -35,6 +35,31 @@ namespace AjisaiFlow.AntiRipping
     }
 
     /// <summary>
+    /// v0.32: texture pixel encryption の実装方式選択。
+    ///
+    /// <see cref="LegacyOverride"/>: v0.31.x 互換 — 主要 3 properties (`_MainTex` / `_BumpMap` / `_AlphaMask`) のみ
+    /// lilToon の OVERRIDE_* macro hook で encryption。 残り ~50+ properties は strip preserve list で
+    /// null 化を回避するが暗号化されない (= leak risk 残存)。
+    ///
+    /// <see cref="UniversalRewrite"/>: v0.32 新方式 — lilToon の全 .hlsl を recursive walk + LIL_SAMPLE_2D[*] 呼出を
+    /// regex 検出 → encrypted property なら _AR_DecodedSample(...) call に書換 → patched copy を Generated/ に保存。
+    /// per-property HLSL helper は C# string interpolation で literal identifier 生成 (no `##` token paste)。
+    /// build-time hit-miss detection で encrypted property の rewrite 漏れを build error 化 (silent leak 完全禁止)。
+    /// 全 ~59 Texture2D properties を universal で encrypt → visual fidelity と完全 leak 防止が両立。
+    ///
+    /// v0.32.0 default: LegacyOverride (Phase 1 では既存動作維持)。
+    /// v0.32.x で UniversalRewrite default 切替予定 (Phase 3)。
+    /// v0.34.0 で LegacyOverride 完全削除予定 (Phase 4、 = 2 minor deprecation period)。
+    /// </summary>
+    public enum EncryptionMode
+    {
+        /// <summary>v0.31.x 互換、 主要 3 properties のみ OVERRIDE_*-per-property で encryption</summary>
+        LegacyOverride = 0,
+        /// <summary>v0.32 新方式、 lilToon source rewrite で全 ~59 properties を universal encryption</summary>
+        UniversalRewrite = 1,
+    }
+
+    /// <summary>
     /// アバタールートに 1 つだけ貼って使う Editor 専用コンポーネント。
     /// ビルド時に NDMF パスがこのコンポーネントを検出し、設定された保護レイヤーをアバターに焼き込む。
     /// INDMFEditorOnly を実装しているため、ビルド成果物には残らない。
@@ -244,6 +269,21 @@ namespace AjisaiFlow.AntiRipping
                  "v0.32 で各 property 専用 OVERRIDE_* macro が完成すれば、 preserve list の texture も暗号化されて strip 対象になる予定。")]
         [SerializeField] private bool stripUnencryptedTextureRefs = true;
 
+        [Tooltip("v0.32: texture pixel encryption の実装方式選択。\n" +
+                 "・LegacyOverride (v0.31.x 互換、 default): 主要 3 properties のみ lilToon OVERRIDE_* macro hook で encrypt。\n" +
+                 "  残り ~50+ properties は strip preserve list で null 化回避するが暗号化されず leak 可能。\n" +
+                 "・UniversalRewrite (v0.32 新方式): lilToon の全 .hlsl を rewrite して LIL_SAMPLE_2D[*] 呼出を\n" +
+                 "  decode 経由に書換、 ~59 Texture2D properties を universal で encrypt。 visual fidelity と\n" +
+                 "  完全 leak 防止が両立。 但し AssetBundle size +27% (BC7 default)、 bake 時間 +50% の代償あり。\n" +
+                 "v0.32.0 では Phase 1 安定確認のため LegacyOverride default、 Phase 3 で UniversalRewrite default 切替予定。")]
+        [SerializeField] private EncryptionMode encryptionMode = EncryptionMode.LegacyOverride;
+
+        [Tooltip("v0.32: VRCFury が avatar 内に存在する場合、 VRCFury が runtime 動的生成する material/shader は\n" +
+                 "AntiRipping の build-time encryption pipeline を構造的に bypass する。 該当 material は元 texture が leak する。\n" +
+                 "この flag を ON にすると VRCFury 検出時の build error / warning を抑制し、 leak risk を user が明示承認した扱いになる。\n" +
+                 "default OFF: VRCFury 検出時に build を停止し、 user に leak risk を明示通知する。")]
+        [SerializeField] private bool acknowledgeVRCFuryLeak = false;
+
         [Tooltip("v0.17+: ビルド時に Renderer GameObject 名をランダム文字列 (_16hex) に置換する。\n" +
                  "AssetRipper で抽出された avatar の Unity Project で「どれが顔/髪/服か」を識別困難にする。\n" +
                  "Humanoid bone は対象外 (Avatar binding 破壊回避)。\n" +
@@ -408,6 +448,9 @@ namespace AjisaiFlow.AntiRipping
         // v0.31.12: locked variant material から暗号化対象外 texture 参照を剥がす (= leak 防止、 visual fidelity 損失あり)
         // EnableTexturePixelEncryption が ON でない時は意味がない (= 暗号化 texture 参照自体が無い) ので AND ゲート。
         public bool StripUnencryptedTextureRefs => EnableTexturePixelEncryption && stripUnencryptedTextureRefs;
+        // v0.32: encryption 実装方式 (LegacyOverride 互換 / UniversalRewrite 新方式)
+        public EncryptionMode EncryptionMode => encryptionMode;
+        public bool AcknowledgeVRCFuryLeak => acknowledgeVRCFuryLeak;
         public int TextureEncryptionMaxResolution => Mathf.Clamp(textureEncryptionMaxResolution, 256, 8192);
         public bool CompressEncryptedTextureBC7 => compressEncryptedTextureBC7;
 
