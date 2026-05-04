@@ -2,6 +2,31 @@
 
 All notable changes to this VPM package.
 
+## [0.32.4] — 2026-05-05 (Phase 2 alpha — universal full coverage)
+
+### Added (Phase 2: ~50+ properties に encryption 拡張)
+
+- **TextureEncryptionPass.ProcessRenderer** に **auto-discover** を追加: universal mode のとき material の全 Texture2D property を walk + deny prefix filter (`_Audio*` / `_Camera*` / `_Grab*` / `_Udon*` / `_VRChat_*` / `_lilBackground` / `_AR_*`) で除外 + `is Texture2D` cast で RT/CRT/Cubemap/3D/2DArray 自動 skip + `Packages/` 配下 (lilToon ramp / Unity 内蔵) skip → 残り全 properties を encrypt。
+- **`LilToonIncludesPatcher`** 新設: lilToon `Includes/*.hlsl` を recursive walk + patched copy 生成 (= rewriter 適用 + transitive include path redirect)。 universal mode で全 sample call 経路に decode 注入。
+- **`LilToonShaderInjector.RewriteIncludePaths`** に patched mapping 引数追加: lts/ltspass の `#include` を patched 版に redirect。
+- **`ShaderLockPass.ApplyEncryptedTextures` / `ApplyTextureSeeds`** を universal mode で auto-discovered properties にも適用。 `ApplyLinearizeForProperty` を新設 (sRGB flag を `_AR<Tex>Linearize` に bake)。
+- AntiRippingPlugin.Apply で `LilToonIncludesPatcher.ClearCache()` を build start に呼び stale path mapping を防止。
+
+### Phase 2 動作
+
+- **LegacyOverride mode**: v0.31.15 完全互換 (regression なし)
+- **UniversalRewrite mode**:
+  - 3 spec properties (`_MainTex` / `_BumpMap` / `_AlphaMask`): 従来通り OVERRIDE_*-per-spec body で decode
+  - 残り auto-discovered properties (~50: emission / matcap / outline / rim / 2nd / shadow tinting / detail / glitter / fur 等): **patched lilToon Includes/** 内で `_AR_DecodedSample(...)` wrap 経由で decode
+  - hit-miss detection: 残存 sample 呼出があれば warning log
+
+### Notes
+
+- 1 build あたり patched .hlsl ~38 file 生成 (= 3-5 MB disk 書込み)、 cache hit で再利用
+- Stale file は CacheJanitor で 7 日 sweep
+- lilToon source 更新時は手動で Generated/Shaders/_AR_inc_*.hlsl を削除 (= cache 強制 invalidate)
+- v0.33+ で lilToon source content hash を cache key に追加予定 (= 自動 invalidate)
+
 ## [0.32.3] — 2026-05-05 (Phase 1 alpha hotfix #2)
 
 ### Fixed
