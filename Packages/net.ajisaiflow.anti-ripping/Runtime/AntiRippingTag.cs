@@ -189,11 +189,6 @@ namespace AjisaiFlow.AntiRipping
                  "v0.31.0 (MVP) では未実装。 v0.31.x で対応予定。")]
         [SerializeField] private bool encryptAlphaMask = true;
 
-        [Tooltip("v0.31.12: master が ON のとき有効: _EmissionMap (発光部) を暗号化する。\n" +
-                 "RGBA 全 channel に XOR。 lilToon の lilEmission 関数の代わりに decode 版 helper を呼び出し、\n" +
-                 "発光 texture を抽出時に noise 化する。")]
-        [SerializeField] private bool encryptEmissionMap = true;
-
         [Tooltip("暗号化 texture の最大解像度 (px、 縦横の長辺)。 これを超える元 texture は GPU Blit で\n" +
                  "downsample してから暗号化する。 AssetBundle サイズ膨張対策。\n" +
                  "・XOR PRNG decode は非可逆圧縮 (BC7/DXT5) と原理的に両立できないため encrypted texture は\n" +
@@ -233,6 +228,19 @@ namespace AjisaiFlow.AntiRipping
                  "サイズ: encrypted (BC7) + mapping (RGBA32 同解像度) = 5 byte/pixel (RGBA32 単独の 1.25 倍)\n" +
                  "BC7 OFF にすると encrypted も RGBA32 = 8 byte/pixel (デバッグ用、 lossless decode)。")]
         [SerializeField] private bool useTextureXorSortMappingMode = false;
+
+        [Tooltip("v0.31.12: texture pixel encryption ON 時、 暗号化対象外の texture 参照 (= _MainTex / _BumpMap / _AlphaMask 以外、 例: _EmissionMap / _DetailAlbedoMap / _MatCapTex / _OutlineTex / _RimColorTex / _Main2ndTex / _Shadow*ColorTex 等) を locked variant material から **null に剥がす**。\n" +
+                 "効果: build 出力の material asset を抽出しても、 暗号化されない texture ファイルへの参照が一切残らない (= 完全な leak 防止)。\n" +
+                 "副作用: 該当 visual feature が default 値で render される。 具体的には:\n" +
+                 "  - emission (発光): 完全消失\n" +
+                 "  - matcap (質感): 反射効果消失、 単色 shading のみ\n" +
+                 "  - outline texture: solid color outline (= _OutlineColor のみ)\n" +
+                 "  - rim light: 縁取り光消失\n" +
+                 "  - 2nd/3rd color layer: 重ね着の上層消失\n" +
+                 "  - detail / glitter / shadow tinting: 全消失\n" +
+                 "default ON (max protection)。 visual fidelity 優先で OFF にすると emission / matcap / outline 等の元 texture が material 経由で抽出可能になる (= leak)。\n" +
+                 "v0.32 で個別 property 暗号化が拡張されれば本 toggle の重要度は下がる予定。")]
+        [SerializeField] private bool stripUnencryptedTextureRefs = true;
 
         [Tooltip("v0.17+: ビルド時に Renderer GameObject 名をランダム文字列 (_16hex) に置換する。\n" +
                  "AssetRipper で抽出された avatar の Unity Project で「どれが顔/髪/服か」を識別困難にする。\n" +
@@ -394,7 +402,9 @@ namespace AjisaiFlow.AntiRipping
         public bool EncryptNormalMap => EnableTexturePixelEncryption && encryptNormalMap;
         public bool EncryptMain2nd => EnableTexturePixelEncryption && encryptMain2nd;
         public bool EncryptAlphaMask => EnableTexturePixelEncryption && encryptAlphaMask;
-        public bool EncryptEmissionMap => EnableTexturePixelEncryption && encryptEmissionMap;
+        // v0.31.12: locked variant material から暗号化対象外 texture 参照を剥がす (= leak 防止、 visual fidelity 損失あり)
+        // EnableTexturePixelEncryption が ON でない時は意味がない (= 暗号化 texture 参照自体が無い) ので AND ゲート。
+        public bool StripUnencryptedTextureRefs => EnableTexturePixelEncryption && stripUnencryptedTextureRefs;
         public int TextureEncryptionMaxResolution => Mathf.Clamp(textureEncryptionMaxResolution, 256, 8192);
         public bool CompressEncryptedTextureBC7 => compressEncryptedTextureBC7;
 
