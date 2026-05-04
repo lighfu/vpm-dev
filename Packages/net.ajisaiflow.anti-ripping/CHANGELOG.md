@@ -2,6 +2,14 @@
 
 All notable changes to this VPM package.
 
+## [0.31.15] — 2026-05-05
+
+### Fixed
+
+- **顔 SMR (multi-material) が真っ白になる visual regression** (v0.31.14 で初めて visible 化): `StripUnencryptedTextureRefs = true` (default ON) が face material の `_EmissionMap` 等を null に剥がし、 lilToon が `_EmissionColor` (default 白) のみで描画 → 顔全体が白光。 `ShaderLockPass.s_StripPreserveList` を新設して emission / matcap / outline / rim / 2nd / shadow tinting / detail / glitter / fur 等の **major rendering texture (~50 properties)** を strip 対象外にし、 visual fidelity を維持。 これらは引き続き material から抽出可能なため leak risk は残存するが、 主要視覚要素 (`_MainTex` / `_BumpMap` / `_AlphaMask`) の暗号化は維持される。
+- 経緯: v0.31.12 で導入した strip は元々 visual fidelity 損失を許容する trade-off だったが、 user の v0.31.12 testing は `enableTexturePixelEncryption=false` だったため strip が起動せず、 v0.31.13 は shader compile fail で original lilToon が走り strip 効果が無効化、 v0.31.14 で初めて「encryption 有効 + compile 成功 + strip 起動」が揃って visible 化した。
+- 将来 v0.32 で各 property 専用 OVERRIDE_* macro が完成すれば、 preserve list の texture も暗号化されて strip 対象になる予定。
+
 ## [0.31.14] — 2026-05-05
 
 ### Fixed

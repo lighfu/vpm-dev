@@ -235,17 +235,13 @@ namespace AjisaiFlow.AntiRipping
                  "BC7 OFF にすると encrypted も RGBA32 = 8 byte/pixel (デバッグ用、 lossless decode)。")]
         [SerializeField] private bool useTextureXorSortMappingMode = false;
 
-        [Tooltip("v0.31.12: texture pixel encryption ON 時、 暗号化対象外の texture 参照 (= _MainTex / _BumpMap / _AlphaMask 以外、 例: _EmissionMap / _DetailAlbedoMap / _MatCapTex / _OutlineTex / _RimColorTex / _Main2ndTex / _Shadow*ColorTex 等) を locked variant material から **null に剥がす**。\n" +
-                 "効果: build 出力の material asset を抽出しても、 暗号化されない texture ファイルへの参照が一切残らない (= 完全な leak 防止)。\n" +
-                 "副作用: 該当 visual feature が default 値で render される。 具体的には:\n" +
-                 "  - emission (発光): 完全消失\n" +
-                 "  - matcap (質感): 反射効果消失、 単色 shading のみ\n" +
-                 "  - outline texture: solid color outline (= _OutlineColor のみ)\n" +
-                 "  - rim light: 縁取り光消失\n" +
-                 "  - 2nd/3rd color layer: 重ね着の上層消失\n" +
-                 "  - detail / glitter / shadow tinting: 全消失\n" +
-                 "default ON (max protection)。 visual fidelity 優先で OFF にすると emission / matcap / outline 等の元 texture が material 経由で抽出可能になる (= leak)。\n" +
-                 "v0.32 で個別 property 暗号化が拡張されれば本 toggle の重要度は下がる予定。")]
+        [Tooltip("v0.31.12+: texture pixel encryption ON 時、 暗号化対象外の texture 参照 (= _MainTex / _BumpMap / _AlphaMask 以外) を locked variant material から null に剥がす。\n" +
+                 "v0.31.15 改良: visual-critical な property (emission / matcap / outline / rim / 2nd / shadow tinting / detail / glitter / fur 等の major rendering texture) は preserve list で保持される。\n" +
+                 "結果として剥がされるのは: detail mask / id mask / NDMF 一時 等の **minor rendering 用 texture** のみ → 顔白化 / 服色 collapse 等の visual fidelity 損失なし。\n" +
+                 "preserve list 詳細は ShaderLockPass.s_StripPreserveList を参照。\n" +
+                 "効果: build 出力の material asset から minor rendering texture への参照は除去 (= 一部 leak 防止)。 emission / matcap / outline 等の major texture は引き続き material から抽出可能 (= leak risk 残存)。\n" +
+                 "default ON (= 軽量 strip)。 OFF にすると全 texture 参照が material に残る。\n" +
+                 "v0.32 で各 property 専用 OVERRIDE_* macro が完成すれば、 preserve list の texture も暗号化されて strip 対象になる予定。")]
         [SerializeField] private bool stripUnencryptedTextureRefs = true;
 
         [Tooltip("v0.17+: ビルド時に Renderer GameObject 名をランダム文字列 (_16hex) に置換する。\n" +
