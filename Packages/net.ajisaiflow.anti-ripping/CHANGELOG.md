@@ -2,6 +2,28 @@
 
 All notable changes to this VPM package.
 
+## [0.32.6] — 2026-05-05 (Phase 2 alpha hotfix #2 — encrypt/decode mask 整合)
+
+### Fixed
+
+- **VRChat 内で OSC unlock 後 mesh 不可視になる致死 bug** (v0.32.5 観測): 真因は **暗号化 mask と decode mask の不整合**。
+  - `_MainTex` の TextureTargetSpec は `Mask = ChannelMask.RGB` (alpha 保護) で、 LegacyOverride mode の OVERRIDE_MAIN body の `_AR_DecodePixelRGB` (RGB only decode) と整合していた。
+  - Phase 2 universal mode で **patched lilToon Includes/** の shadow / outline / meta pass の `LIL_SAMPLE_2D_ST(_MainTex, ...)` が rewriter で `_AR_DecodedSample(...)` (= **RGBA 4 channel decode**) に wrap される。 RGB 暗号化 + RGBA decode で alpha が `origA XOR maskA = wrong` になり、 shadow pass の `clip(decoded.a - _Cutoff)` で **全 pixel discard** → mesh 不可視。
+  - `_DitherTex` は `lilSamplePointRepeat` 経由の **直接 `tex2D()` 呼出** で sample されるため rewriter が wrap しない → 暗号化されると dither pattern 破綻 → 全 pixel discard の risk もあった。
+
+### Changes
+
+1. **Universal mode で spec 暗号化 mask を `ChannelMask.RGBA` に強制統一**: encryption と `_AR_DecodedSample` の RGBA decode を整合させる。 `_MainTex` (RGB → RGBA) / `_AlphaMask` (ROnly → RGBA) を universal mode のみ override。 LegacyOverride mode は spec のまま (= v0.31.x 互換)。
+2. **Universal mode で OVERRIDE_*-per-spec emission を skip**: Phase 2 で patched Includes/ が全 sample 呼出を `_AR_DecodedSample` で wrap するため redundant。 OVERRIDE_*-per-spec の RGB decode と encryption の RGBA mask の不整合 risk を構造的に回避。 LegacyOverride mode は従来通り emission (= v0.31.x 互換)。
+3. **`_Dither` prefix を deny list に追加**: `_DitherTex` / `_DitherMaskLOD` が `tex2D()` 直接 sample のため rewriter 対象外。 暗号化すると dither 破綻 → cutout / shadow で全 pixel discard。
+
+### Architecture (v0.32.6 universal mode 確定)
+
+- 全 Texture2D properties (auto-discovered + spec) を **RGBA mask で encryption**
+- patched lilToon Includes/ の全 `LIL_SAMPLE_2D[*]` 呼出が `_AR_DecodedSample(..., RGBA decode)` に wrap される
+- OVERRIDE_*-per-spec emission **無し** (Phase 1 では emission したが Phase 2 では redundant + 不整合 risk)
+- `_DitherTex` / `_DitherMaskLOD` 等は deny list で encryption 除外 → dither pattern 維持
+
 ## [0.32.5] — 2026-05-05 (Phase 2 alpha hotfix #1)
 
 ### Fixed
