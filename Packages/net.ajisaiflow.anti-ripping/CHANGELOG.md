@@ -2,6 +2,18 @@
 
 All notable changes to this VPM package.
 
+## [0.32.7] — 2026-05-05 (Phase 2 致死 bug fix — asuint vs (uint) cast)
+
+### Fixed
+
+- **テクスチャ decode が完全失敗する致死 bug**: `HlslSourceRewriter.Rewrite` が `_AR_DecodedSample` 呼出を生成する際、 seed parameter を **`asuint(_AR_FooSeedLo)`** で渡していた。
+  - HLSL `asuint(float)` は **bit reinterpretation** (IEEE 754 float bit pattern を uint として読む)。
+  - `material.SetFloat("_AR_MainTexSeedLo", 22136.0f)` で bake された seed (= float 22136.0) を `asuint` すると `0x46AC1C00 = 1186930688` (= IEEE 754 bit pattern) となり、 値 22136 にならない。
+  - `_AR_DecodedSample` 関数内で `stored = (seedHi << 16) | seedLo` が garbage 値 → `effSeed = stored ^ kp` も garbage → mask 計算が完全に間違う → **全 channel decode 失敗 → texture が encrypted noise のまま表示**。
+  - 既存 OVERRIDE_*-per-spec body (`LilToonShaderInjector.cs:860` 等) と `BuildVertexHookAndCommonProperties` の `(uint)_AR_TK0` cast は **`(uint)`** (= 値変換) を使っており正常動作していた。 私が新設した HlslSourceRewriter だけが `asuint` を使用していたミス。
+- **修正**: `HlslSourceRewriter` で `asuint(seedLoProp)` → `(uint)(seedLoProp)` に変更 (= 値変換、 truncate float → uint)。 既存 OVERRIDE_*-per-spec の cast semantic と一致。
+- **顕在化 timing**: Phase 1 (v0.32.0-3) では rewriter が lts/ltspass 本体だけ walk し、 lilToon Includes/ を patch しなかった → `_AR_DecodedSample` がほぼ呼ばれず asuint bug が dormant。 Phase 2 (v0.32.4-6) で patched Includes/ が `_AR_DecodedSample` を実呼出するようになり即顕在化。
+
 ## [0.32.6] — 2026-05-05 (Phase 2 alpha hotfix #2 — encrypt/decode mask 整合)
 
 ### Fixed
