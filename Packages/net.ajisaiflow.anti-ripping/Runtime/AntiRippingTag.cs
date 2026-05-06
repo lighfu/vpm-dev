@@ -80,7 +80,7 @@ namespace AjisaiFlow.AntiRipping
         [Tooltip("頂点を擬似ランダムに変位させる距離 (メートル)。\n" +
                  "大きいほど見た目が破壊されるが AABB が極端に拡大する。0.3〜1.0 推奨")]
         [Range(0.05f, 2.0f)]
-        [SerializeField] private float meshLockScrambleRadius = 0.5f;
+        [SerializeField] private float meshLockScrambleRadius = 0.1f;
 
         [Tooltip("ON: VRChat の保存パラメータに OSC で 1 回書けば次回以降自動復元 (推奨)\n" +
                  "OFF: 毎セッション AntiRippingClient による OSC 送信が必要 (より安全)")]
