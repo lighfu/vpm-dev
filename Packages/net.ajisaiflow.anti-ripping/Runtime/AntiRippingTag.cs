@@ -134,12 +134,6 @@ namespace AjisaiFlow.AntiRipping
                  "ShaderLockPass の存在 / 役割を識別困難にする (従来の固定名 _AjisaiAR_InvBroadcast 撤廃)。")]
         [SerializeField] private string meshLockInvBroadcastParamName = "";
 
-        [Tooltip("解錠状態 Bool→Float decode 用 local Float パラメータ名 (localOnly Float, default=0)。\n" +
-                 "synced IsUnlocked (Bool, 1 bit) を BoolDecoder Layer で 0/1 Float に変換した値。\n" +
-                 "ShaderLockPass の BlendTree axis / directBlendParameter (Float 必須) と\n" +
-                 "Display Layer の Float 比較 transition で参照する。 鍵生成時にランダム化。")]
-        [SerializeField] private string meshLockIsUnlockedFloatParamName = "";
-
         [Tooltip("各 K_i に乗じる salt 値 (8 byte / 1〜255)。\n" +
                  "score = Σ (K_i × salt_i) / 255 で計算され、鍵が一致したときだけ expected と等しくなる。\n" +
                  "salt はクリップに埋もれるため、attacker は 1 つの expected 値から 8 個の鍵を逆算する必要がある。")]
@@ -446,9 +440,6 @@ namespace AjisaiFlow.AntiRipping
         public string MeshLockBroadcastParamName => meshLockBroadcastParamName ?? "";
         public bool HasMeshLockBroadcastParamName => !string.IsNullOrEmpty(meshLockBroadcastParamName);
 
-        public string MeshLockIsUnlockedFloatParamName => meshLockIsUnlockedFloatParamName ?? "";
-        public bool HasMeshLockIsUnlockedFloatParamName => !string.IsNullOrEmpty(meshLockIsUnlockedFloatParamName);
-
         public string MeshLockUnlockBlendShapeName => meshLockUnlockBlendShapeName ?? "";
         public bool HasMeshLockUnlockBlendShapeName => !string.IsNullOrEmpty(meshLockUnlockBlendShapeName);
 
@@ -618,8 +609,6 @@ namespace AjisaiFlow.AntiRipping
         public string GetOneParamName() => string.IsNullOrEmpty(meshLockOneParamName) ? "_AjisaiAR_One" : meshLockOneParamName;
         public string GetInvBroadcastParamName() =>
             string.IsNullOrEmpty(meshLockInvBroadcastParamName) ? "_AjisaiAR_InvBroadcast" : meshLockInvBroadcastParamName;
-        public string GetIsUnlockedFloatParamName() =>
-            string.IsNullOrEmpty(meshLockIsUnlockedFloatParamName) ? "_AjisaiAR_IsUnlockedFloat" : meshLockIsUnlockedFloatParamName;
 
         /// <summary>
         /// パラメータ名を取り出す。未生成の場合は固定名にフォールバック (旧データ動作維持用)。
