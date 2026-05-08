@@ -132,6 +132,162 @@ cmd /c start "" "C:\Users\<user>\AppData\Local\AjisaiFlow\AntiRippingClient\Anti
 5. Steam の VRChat 起動オプションに貼り付け → VRChat 起動 → tray アイコンが先に出ることを確認
 6. 既に起動中の状態で再度 VRChat を起動しても MessageBox が出ないこと (silent exit)
 
+## [0.34.0] — 2026-05-07 (Universal LIL_SAMPLE_* wrapper framework — stable)
+
+> v0.34.0-alpha.1 (下記参照) を Unity 実機 variant matrix 検証 (lts / ltsmulti / ltsmulti_ref / ltsl / lts_fur / lts_gem / lts_tess × Forward / ForwardAdd / Outline / Meta / Shadow / DepthOnly) で問題なし確認 → stable 化。
+
+### Changed
+
+- `enableLilToonUniversalWrapper` master toggle を撤去。 alpha 期間の cross-validation 用に「OFF で旧 OVERRIDE_* path に短絡」する選択肢を残していたが、 wrapper 経路が安定したため不要。 `Runtime/AntiRippingTag.cs` の SerializeField + public getter、 `Editor/AntiRippingPlugin.cs` の log 出力から削除。 既存 user の Inspector 表示には影響なし (default ON のため挙動変化なし)。
+
+### Verification
+
+- 公式 lilToon shader 仕様準拠 audit 完了 (`Documentation~/audit/lilToon-compliance-2026-05-07.md`、 ~600 行) → 既存 3 prop の wrapper 経路に regression なし
+- v0.34.0-alpha.1 が報告した 4 lilToon variant 個別 compile に加え、 7 variant × 6 pass の variant matrix で実機検証通過
+
+### Roadmap
+
+v0.34.1+ で予定していた Mask group activate は audit Finding (B / C) を踏まえ v0.34.6+ に延期 (詳細は `Documentation~/handoff/2026-05-07-handoff.md`)。 次の段階 release は v0.34.2 Color group (Finding A `lilGetSubTex` token paste 解決後)。
+
+---
+
+## [0.34.0-alpha.1] — 2026-05-07 (Universal LIL_SAMPLE_* wrapper framework — alpha 1)
+
+> 段階導入の最初のステップ。 lilToon の全 texture sampling を universal wrapper 経由に再設計するための **framework 構築 + 既存 3 prop の wrapper 経路移行**。 既存挙動 100% 互換、 全 group toggle が default OFF (opt-in)。
+
+### Context
+
+v0.33.x までは `_MainTex` / `_BumpMap` / `_AlphaMask` の 3 prop のみ暗号化、 残り ~50 個の lilToon auxiliary texture (`_Main2ndTex`, `_MatCapBlendMask`, `_EmissionMap`, `_OutlineWidthMask`, `_RimColorTex` 等) は AssetRipper 抽出で素通し leak していた。 user 検証 (chiffon-spring avatar) で face decal / mask / emission texture が大量に見える状態を確認。
+
+過去 v0.31.13 で `_EmissionMap` を `OVERRIDE_EMISSION_1ST` inline 展開で対応しようとして、 lilToon variant (LIL_LITE / MULTI / REFRACTION × Forward / Outline / Meta / Shadow pass) で `fd.invLighting` / `fd.albedo` / `lilCalcBlink` 等が未定義 → compile error → 全 renderer fallback → 全 texture 露出という致死 regression を起こした。
+
+v0.34.x では **architectural rewrite** で全 lilToon texture を統一的に暗号化対象にする。 5 段階 release で段階的に category を活性化 (Mask → Color → Normal → Emission)。 user の主要関心事 (face decal `_Main2ndTex` / `_Main3rdTex`) は **v0.34.2** で解決予定。
+
+### Added
+
+#### Universal LIL_SAMPLE_* wrapper framework
+
+lilToon の `LIL_SAMPLE_2D` / `LIL_SAMPLE_2D_ST` / `LIL_SAMPLE_2D_LOD` / `LIL_SAMPLE_2D_GRAD` / `LIL_SAMPLE_2D_BIAS` macro family を **HLSL preprocessor token paste** で per-property specialization に redirect する universal wrapper 機構を追加。
+
+```hlsl
+#undef  LIL_SAMPLE_2D_ST
+#define LIL_SAMPLE_2D_ST(tex, samp, uv) _AR_LilSampleST_##tex(samp, uv)
+//                                         ^^^^^^^^^^^^^^^^^^^^^^^
+//                                         tex == "_MainTex" → _AR_LilSampleST__MainTex
+```
+
+各 lilToon prop に対し specialization 関数を emit:
+- 暗号化対象 (= spec 配列に entry あり) → seed != 0 のとき snap+decode、 seed = 0 のとき raw passthrough
+- 非対象 → 常に raw passthrough (lilToon body 内 sample が我々の wrapper 経由で解決される必要があるため必須)
+
+#### v0.31.13 と本設計の構造的差異
+
+v0.31.13 は `OVERRIDE_*` body を inline 展開して `fd.invLighting` / `fd.albedo` 等 lilToon body context を再生成しようとした → variant ごとの context 差で compile fail。
+
+v0.34.0 は `LIL_SAMPLE_*` macro 1 点のみ介入。 lilToon の元 body は **そのまま走る**。 我々は sample primitive の戻り値を decode するだけ → variant 互換性 100% 構造保証。
+
+#### TEXTURE2D 関数 parameter alias 層
+
+architectural finding (2026-05-07): lilToon の 6 つの helper 関数 (`lilGetOutlineWidth`, `lilGetOutlineVector`, `lilCalcOutlinePosition*`, `lilGradationMap`, `lilParallax` / `lilPOM`, `lilCalcGlitter`) と 2 つの sub-texture 関数 (`lilGetSubTex`, `lilGetSubTexWithoutAnimation`) が **TEXTURE2D を関数パラメータとして受け取る**。
+
+関数 body 内 `LIL_SAMPLE_2D_LOD(outlineWidthMask, samp, uv, 0)` は token paste で **小文字 param 名** ベース `_AR_LilSampleLOD_outlineWidthMask` に展開。 我々の specialization は **大文字 global property 名** ベース `_AR_LilSampleLOD__OutlineWidthMask` のみ。
+
+mitigation: parameter forwarding alias 層を inject。 7 alias × 5 macro variant = 35 alias macro を emit:
+```hlsl
+#define _AR_LilSampleLOD_outlineWidthMask(samp, uv, lod) _AR_LilSampleLOD__OutlineWidthMask(samp, uv, lod)
+// ...
+```
+
+#### 5 group toggle + 4 emergency disable + master switch
+
+`AntiRippingTag` に新規 SerializeField 9 個追加 (default 全 OFF、 opt-in):
+- `enableLilToonUniversalWrapper` (master、 緊急時 OFF で旧 OVERRIDE_* path に回帰)
+- `encryptMaskGroup` / `encryptColorGroup` / `encryptNormalGroup` / `encryptEmissionGroup` (段階 release で activate)
+- `disableMaskGroup` 等 emergency disable (build-time の 1-click partial rollback)
+
+#### LilToonTextureCatalog 新規導入
+
+`Editor/Pipeline/LilToonTextureCatalog.cs` (新規、 ~210 行) に lilToon `lil_common_input.hlsl:834-892` の 全 ~58 TEXTURE2D() prop を Category 分類で master list 化。 specialization emit の single source of truth。 `FunctionParameterAliases` も同 file に集約 (= alias mapping の source-of-truth)。
+
+#### Shader-lock 失敗時の leak 防止 mitigation
+
+shader 生成失敗 → BlendShape lock fallback path で、 暗号化対象 prop に対し `material.SetTexture(propName, null)` を spec 配列駆動で全実行。 visual collapse するが leak は 0 (= safety mode 相当)。 v0.31.13 で抜けていた防衛線を v0.34.0 で塞ぐ。
+
+### Changed
+
+`LilToonShaderInjector.BuildHookCode()` を mode 別に分岐:
+- **ValueXor mode (default)**: universal wrapper path。 `BuildUniversalDecodeHelpers` + `BuildAllPerPropertySpecializations` + `BuildFunctionParameterAliases` + `BuildMacroRedefinitions`
+- **XorSortMapping mode**: 既存 OVERRIDE_* path 温存 (= v0.31.x B+ の `_MainTex` 専用 mapping decode、 wrapper 化は v0.34.6+ で検討)
+
+`TextureTargetSpec` に `Category` field 追加 (`LilToonTextureCatalog.Category` と整合)。 既存 3 entry に Color/Normal/Mask 値を埋め込み。
+
+### v0.34.0 alpha 1 の検証 scope
+
+- chiffon-spring avatar で従来 3 toggle ON、 build 成功
+- Generated shader (`Assets/紫陽花広場/anti-ripping/Generated/Shaders/_AR_lts_*.shader`) の HLSLINCLUDE block に specialization が emit されている (3 個 decode + ~55 個 passthrough)
+- Play mode で OSC unlock 前後で v0.33.9 と pixel-identical (regression なし)
+- AssetRipper 抽出で 3 prop が依然 noise
+- 4 lilToon variant (lilToon, Multi, Refraction, Outline) で個別 compile 確認
+
+v0.34.1 以降で Mask group → Color group (face decal) → Normal group → Emission group を段階追加予定 (各段階で alpha → beta → stable cycle、 部分 rollback 可能設計)。
+
+### Files Modified
+
+- `Editor/Pipeline/LilToonTextureCatalog.cs` (新規、 +210 行)
+- `Editor/Pipeline/TextureTargetSpec.cs` (Category field 追加)
+- `Editor/Pipeline/TextureEncryptionPass.cs` (3 entry に Category 値設定)
+- `Editor/Pipeline/LilToonShaderInjector.cs` (BuildHookCode rewrite、 +280 行 / -60 行)
+- `Editor/Pipeline/ShaderLockPass.cs` (NullifyEncryptionTargetTextures + fallback path 強化)
+- `Runtime/AntiRippingTag.cs` (9 SerializeField + 9 public property accessor 追加)
+
+### Debug logger 強化 (`ARLog`)
+
+新規 `Editor/ARLog.cs` (+70 行) で全 Anti-Ripping log を中央集約。 既存の `Debug.Log("[AntiRipping] ...")` 形式 (23 file × 72 call site) を `ARLog.Info("Tag", "...")` に migrate。
+
+**形式**: <code>&lt;color=#9966FF&gt;[Anti-Ripping]&lt;/color&gt; [TAG] message</code>
+- 紫青色の brand prefix で Unity Console 上で視認性が高い (rich text)
+- 各 pass を識別する <code>[TAG]</code> (例: `Wrapper`, `ShaderInject`, `ShaderLock`, `TextureEnc`, `TextureEncFinalize`, `KeyAnim`, `MeshLock`, `Plugin`, `AutoKey`, `Cache`, `OSC`, `Watermark` 等)
+- 純粋な事実のみ記録 (推測・「可能性がある」 等の不確実表現を排除)
+
+**v0.34.0 wrapper 経路の新規 log**:
+- `Wrapper`: locked shader 生成時に specialization 数 / alias 数 / macro variant 数を log
+- `ShaderLock`: 各 material swap で renderer / slot / src shader / locked shader / mode を log (VerboseLogging 時)
+- `ShaderLock` fallback: shader-lock 失敗時に null 化した暗号化対象 prop 数を log (leak 防止 mitigation の動作確認用)
+
+---
+
+## [0.33.9] — 2026-05-07 (lilToon カスタムシェーダーで material が pink になる致死バグ fix)
+
+### Fixed
+
+lilToon の **カスタムシェーダー機構** (= Inspector の「カスタムシェーダー作成」 や `.lilcontainer` / `.lilblock` / `custom.hlsl` を経由してサードパーティが生成した派生 shader、 例 BoundBonePro lilToonSquish) を使う material が、 VRCAAR ビルド後に **pink (shader compile error)** になる致死バグを修正。
+
+#### 真因
+
+`AntiRippingTag.ShouldLockShader` は shader.name に `"lilToon"` 部分一致で **無条件に shader-lock 対象** にする。 これにより lilToon カスタム派生 shader にも `LilToonShaderInjector` の injection が走るが、 ユーザー shader は (a) `.lilcontainer` 由来の独特な `#include` 構造、 (b) `custom.hlsl` 内のユーザー定義 `lilCustomVertexWS` と VRCAAR の `LIL_CUSTOM_VERTEX_OS` define の hook 相互作用、 (c) Outline pass 等の特殊構造で UV6/7 declare に整合性が取れない、 などの複合要因で **shader compile error** → material が pink になっていた。
+
+再現 shader 名 例: `Hidden/BoundBonePro/lilToonSquish/Outline`。
+
+#### 修正
+
+副作用最小の hotfix。 injection 機構は **触らず**、 「injection が安全に通らない派生」 を **自動検出 + 手動 override** で shader-lock 対象から外し、 BlendShape lock + texture 非暗号化にフォールバック。
+
+- **自動検出** (`LilToonShaderInjector.IsLikelyCustomLilToonDerivative`): shader.name に `"lilToon"` を含み、 かつ asset path が lilToon 公式 package (`jp.lilxyzw.liltoon`) 配下でない shader を自動的に skip。 公式 lilToon / lilToonMulti / lilToonRefraction / lilToonOnePassOutline は package 配下なので影響なし
+- **手動 override** (`AntiRippingTag.excludeFromShaderLock`): Inspector の「Shader-Lock 除外名」 リストに shader 名の一部 (例: `BoundBonePro`) を追加すると、 自動検出で拾えない shader も skip 可能
+- **shader-lock skip 後の保護**: SMR は BlendShape unlock で頂点復元 (mesh-level lock 維持)、 texture は元 srcTex がそのまま LAC に渡る (= 非暗号化、 ただし BlendShape lock で抽出 mesh は scramble 済み)
+
+#### 副作用とトレードオフ
+
+shader-lock skip された material は **shader-level vertex decode が動かず**、 SMR は BlendShape unlock のみで保護 (MR は永久 scrambled の既存仕様制約のまま)。 texture 暗号化も skip されるため、 抽出 PNG は元のまま見える。 lilToon カスタム shader は装飾的 material (decoration / VFX) で使われるケースが多いと想定し、 主 body material が標準 lilToon なら影響軽微。 主 body material がカスタムの場合は texture 露出のリスクが残る (= ユーザー判断)。
+
+#### 検証手順
+
+1. BoundBonePro Squish 入りプロジェクトで `enableShaderLevelDecode = true` のままビルド → material が pink にならない
+2. Console に `[AntiRipping] shader 'Hidden/BoundBonePro/...' を shader-lock 対象から自動除外しました` の info ログが 1 行出る
+3. ビルド成果物で `_AjisaiAR_Unlock` BlendShape を 100→0→100 で頂点復元確認
+4. 標準 lilToon avatar で既存通り shader-lock + texture encryption が動作 (regression なし)
+5. lilToon Refraction / Multi avatar で既存通り arlocked_ 経路が動作 (regression なし)
+
 ## [0.33.4] — 2026-05-06 (NDMF Manual Bake で texture 復号 shader が焼かれない致死バグ fix)
 
 ### Fixed

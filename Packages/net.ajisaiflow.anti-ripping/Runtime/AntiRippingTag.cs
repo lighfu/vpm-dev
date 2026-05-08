@@ -134,6 +134,12 @@ namespace AjisaiFlow.AntiRipping
                  "ShaderLockPass の存在 / 役割を識別困難にする (従来の固定名 _AjisaiAR_InvBroadcast 撤廃)。")]
         [SerializeField] private string meshLockInvBroadcastParamName = "";
 
+        [Tooltip("解錠状態 Bool→Float decode 用 local Float パラメータ名 (localOnly Float, default=0)。\n" +
+                 "synced IsUnlocked (Bool, 1 bit) を BoolDecoder Layer で 0/1 Float に変換した値。\n" +
+                 "ShaderLockPass の BlendTree axis / directBlendParameter (Float 必須) と\n" +
+                 "Display Layer の Float 比較 transition で参照する。 鍵生成時にランダム化。")]
+        [SerializeField] private string meshLockIsUnlockedFloatParamName = "";
+
         [Tooltip("各 K_i に乗じる salt 値 (8 byte / 1〜255)。\n" +
                  "score = Σ (K_i × salt_i) / 255 で計算され、鍵が一致したときだけ expected と等しくなる。\n" +
                  "salt はクリップに埋もれるため、attacker は 1 つの expected 値から 8 個の鍵を逆算する必要がある。")]
@@ -154,6 +160,15 @@ namespace AjisaiFlow.AntiRipping
                  "(現状の injector は lilToon と Poiyomi のみ対応。それ以外の shader は\n" +
                  " 注入失敗 → BlendShape lock にフォールバック。)")]
         [SerializeField] private string[] extraShaderNamesToLock = new string[0];
+
+        [Tooltip("v0.33.9+: Shader-Lock の対象から **除外** する shader 名 (部分一致、 大文字小文字無視)。\n" +
+                 "lilToon カスタムシェーダー (BoundBonePro lilToonSquish 等、 .lilcontainer / .lilblock 経由で\n" +
+                 "生成された派生 shader) で ビルド後 material が pink (shader compile error) になる場合に、\n" +
+                 "shader 名の一部 (例: 'BoundBonePro'、 'lilToonSquish') を追加すると当該 material の shader-lock\n" +
+                 "を skip できる。 skip された material は BlendShape lock + texture 非暗号化で出力される。\n" +
+                 "(自動検出: lilToon 公式 package 配下でない 'lilToon' を含む shader は自動的に skip される。\n" +
+                 " このリストは自動検出で拾えない shader への手動 override。)")]
+        [SerializeField] private string[] excludeFromShaderLock = new string[0];
 
         // ────────────────────────────── Texture Pixel Encryption (v0.31, 実験的) ──────────────────────────────
 
@@ -234,6 +249,47 @@ namespace AjisaiFlow.AntiRipping
                  "サイズ: encrypted (BC7) + mapping (RGBA32 同解像度) = 5 byte/pixel (RGBA32 単独の 1.25 倍)\n" +
                  "BC7 OFF にすると encrypted も RGBA32 = 8 byte/pixel (デバッグ用、 lossless decode)。")]
         [SerializeField] private bool useTextureXorSortMappingMode = false;
+
+        // ── v0.34.0+: Universal LIL_SAMPLE_* wrapper category groups ──
+
+        [Tooltip("v0.34.1+ で activate: Mask group (single-channel mask 16 prop) を一括暗号化対象にする。\n" +
+                 "対象: _DetailMask, _MainColorAdjustMask, _MatCapBlendMask, _OutlineWidthMask, _ShadowBorderMask 等。\n" +
+                 "default OFF (opt-in、 既存挙動温存)。 v0.34.1 以降、 group ON で 16 prop が暗号化される。")]
+        [SerializeField] private bool encryptMaskGroup = false;
+
+        [Tooltip("v0.34.2+ で activate: Color group (sRGB color 18 prop) を一括暗号化対象にする。\n" +
+                 "対象: _Main2ndTex (face eye decal), _Main3rdTex (face brow decal), _OutlineTex,\n" +
+                 "      _MatCapTex, _MatCap2ndTex, _RimColorTex, _Shadow*ColorTex 等。\n" +
+                 "default OFF (opt-in)。 v0.34.2 以降、 group ON で face decal 等が暗号化される。")]
+        [SerializeField] private bool encryptColorGroup = false;
+
+        [Tooltip("v0.34.3+ で activate: Normal group (法線 5 prop) を一括暗号化対象にする。\n" +
+                 "対象: _Bump2ndMap, _MatCapBumpMap, _MatCap2ndBumpMap, _AnisotropyTangentMap, _OutlineVectorTex。\n" +
+                 "default OFF (opt-in)。 v0.34.3 以降、 group ON で 2nd normal 等が暗号化される。")]
+        [SerializeField] private bool encryptNormalGroup = false;
+
+        [Tooltip("v0.34.4+ で activate: Emission group (発光 5 prop) を一括暗号化対象にする。\n" +
+                 "対象: _EmissionMap, _Emission2ndMap, _EmissionGradTex, _Emission2ndGradTex 等。\n" +
+                 "v0.31.13 で OVERRIDE_EMISSION_1ST inline 展開で致死 regression を起こした教訓を踏まえ、\n" +
+                 "v0.34.4 では universal wrapper 方式 (= sample primitive 1 点のみ介入) で実装。\n" +
+                 "lilToon body の context (fd.invLighting / fd.albedo / lilCalcBlink 等) には一切 touch しないため\n" +
+                 "全 lilToon variant (LIL_LITE / MULTI / REFRACTION × Forward / Outline / Meta / Shadow) で互換性 100% 構造保証。\n" +
+                 "default OFF (opt-in、 段階 release で最後に活性化)。")]
+        [SerializeField] private bool encryptEmissionGroup = false;
+
+        // ── Emergency disable switches (build-time、 group-level rollback) ──
+        [Tooltip("v0.34.0+: 緊急時に Mask group を build-time で完全 disable (= group toggle ON でも暗号化 skip)。\n" +
+                 "user が「v0.34.1 以降を入れたら〇〇が崩れた」と報告した際の 1-click partial rollback 用。 default OFF。")]
+        [SerializeField] private bool disableMaskGroup = false;
+
+        [Tooltip("v0.34.0+: 緊急時に Color group を build-time で完全 disable。 default OFF。")]
+        [SerializeField] private bool disableColorGroup = false;
+
+        [Tooltip("v0.34.0+: 緊急時に Normal group を build-time で完全 disable。 default OFF。")]
+        [SerializeField] private bool disableNormalGroup = false;
+
+        [Tooltip("v0.34.0+: 緊急時に Emission group を build-time で完全 disable。 default OFF。")]
+        [SerializeField] private bool disableEmissionGroup = false;
 
         [Tooltip("v0.31.12+: texture pixel encryption ON 時、 暗号化対象外の texture 参照 (= _MainTex / _BumpMap / _AlphaMask 以外) を locked variant material から null に剥がす。\n" +
                  "v0.31.15 改良: visual-critical な property (emission / matcap / outline / rim / 2nd / shadow tinting / detail / glitter / fur 等の major rendering texture) は preserve list で保持される。\n" +
@@ -390,6 +446,9 @@ namespace AjisaiFlow.AntiRipping
         public string MeshLockBroadcastParamName => meshLockBroadcastParamName ?? "";
         public bool HasMeshLockBroadcastParamName => !string.IsNullOrEmpty(meshLockBroadcastParamName);
 
+        public string MeshLockIsUnlockedFloatParamName => meshLockIsUnlockedFloatParamName ?? "";
+        public bool HasMeshLockIsUnlockedFloatParamName => !string.IsNullOrEmpty(meshLockIsUnlockedFloatParamName);
+
         public string MeshLockUnlockBlendShapeName => meshLockUnlockBlendShapeName ?? "";
         public bool HasMeshLockUnlockBlendShapeName => !string.IsNullOrEmpty(meshLockUnlockBlendShapeName);
 
@@ -398,6 +457,7 @@ namespace AjisaiFlow.AntiRipping
 
         public bool EnableShaderLevelDecode => enableShaderLevelDecode;
         public string[] ExtraShaderNamesToLock => extraShaderNamesToLock ?? new string[0];
+        public string[] ExcludeFromShaderLock => excludeFromShaderLock ?? new string[0];
 
         // ── Texture Pixel Encryption (v0.31) ──
         // master が OFF のとき子 toggle は全て無効化される。
@@ -410,6 +470,15 @@ namespace AjisaiFlow.AntiRipping
         public bool EncryptNormalMap => EnableTexturePixelEncryption && encryptNormalMap;
         public bool EncryptMain2nd => EnableTexturePixelEncryption && encryptMain2nd;
         public bool EncryptAlphaMask => EnableTexturePixelEncryption && encryptAlphaMask;
+
+        // ── v0.34.0+: Universal wrapper category group accessors ──
+        // 各 group toggle は v0.34.x 段階 release で対応 prop の IsEnabled lambda に評価される。
+        // disable switch が ON だと group toggle 値に関わらず disable 扱い (緊急 rollback)。
+        public bool EncryptMaskGroup     => EnableTexturePixelEncryption && encryptMaskGroup     && !disableMaskGroup;
+        public bool EncryptColorGroup    => EnableTexturePixelEncryption && encryptColorGroup    && !disableColorGroup;
+        public bool EncryptNormalGroup   => EnableTexturePixelEncryption && encryptNormalGroup   && !disableNormalGroup;
+        public bool EncryptEmissionGroup => EnableTexturePixelEncryption && encryptEmissionGroup && !disableEmissionGroup;
+
         // v0.31.14 revert: EncryptEmissionMap property は v0.31.13 で追加したが致死 regression のため撤去。
         // v0.31.12: locked variant material から暗号化対象外 texture 参照を剥がす (= leak 防止、 visual fidelity 損失あり)
         // EnableTexturePixelEncryption が ON でない時は意味がない (= 暗号化 texture 参照自体が無い) ので AND ゲート。
@@ -487,22 +556,39 @@ namespace AjisaiFlow.AntiRipping
         /// 与えられた shader が AntiRipping の lock 対象とみなせるかを判定する。
         /// 自動対象: lilToon 派生 / Poiyomi 派生 (".poiyomi/..." または "Poiyomi" を含む)。
         /// 加えて <c>ExtraShaderNamesToLock</c> に指定された shader 名 (部分一致、大文字小文字無視) も対象。
+        /// v0.33.9+: <c>ExcludeFromShaderLock</c> に指定された shader 名 (部分一致) は強制的に対象外にする
+        /// (lilToon カスタムシェーダーで pink バグが起きるケースの override)。
         /// </summary>
         public bool ShouldLockShader(Shader shader)
         {
             if (shader == null || string.IsNullOrEmpty(shader.name)) return false;
+
+            bool match = false;
             // lilToon 派生は無条件で対象
-            if (shader.name.IndexOf("lilToon", System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (shader.name.IndexOf("lilToon", System.StringComparison.OrdinalIgnoreCase) >= 0) match = true;
             // Poiyomi 派生も自動対象 (".poiyomi/Poiyomi Toon" 等、Thry-locked 変種 "Hidden/Locked/.poiyomi/..." も拾う)
-            if (shader.name.IndexOf(".poiyomi/", System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (shader.name.IndexOf("Poiyomi", System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            // ユーザー指定の追加対象
-            foreach (var s in ExtraShaderNamesToLock)
+            else if (shader.name.IndexOf(".poiyomi/", System.StringComparison.OrdinalIgnoreCase) >= 0) match = true;
+            else if (shader.name.IndexOf("Poiyomi", System.StringComparison.OrdinalIgnoreCase) >= 0) match = true;
+            else
+            {
+                // ユーザー指定の追加対象
+                foreach (var s in ExtraShaderNamesToLock)
+                {
+                    if (string.IsNullOrEmpty(s)) continue;
+                    if (shader.name.IndexOf(s, System.StringComparison.OrdinalIgnoreCase) >= 0) { match = true; break; }
+                }
+            }
+            if (!match) return false;
+
+            // v0.33.9+: 手動 exclude override (= match を false に倒す)。
+            // lilToon カスタムシェーダー (BoundBonePro lilToonSquish 等) で pink バグが起きる場合の救済策。
+            // shader-lock を skip → BlendShape lock + texture 非暗号化にフォールバック。
+            foreach (var s in ExcludeFromShaderLock)
             {
                 if (string.IsNullOrEmpty(s)) continue;
-                if (shader.name.IndexOf(s, System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                if (shader.name.IndexOf(s, System.StringComparison.OrdinalIgnoreCase) >= 0) return false;
             }
-            return false;
+            return true;
         }
 
         public string MeshLockScoreParamName => meshLockScoreParamName ?? "";
@@ -532,6 +618,8 @@ namespace AjisaiFlow.AntiRipping
         public string GetOneParamName() => string.IsNullOrEmpty(meshLockOneParamName) ? "_AjisaiAR_One" : meshLockOneParamName;
         public string GetInvBroadcastParamName() =>
             string.IsNullOrEmpty(meshLockInvBroadcastParamName) ? "_AjisaiAR_InvBroadcast" : meshLockInvBroadcastParamName;
+        public string GetIsUnlockedFloatParamName() =>
+            string.IsNullOrEmpty(meshLockIsUnlockedFloatParamName) ? "_AjisaiAR_IsUnlockedFloat" : meshLockIsUnlockedFloatParamName;
 
         /// <summary>
         /// パラメータ名を取り出す。未生成の場合は固定名にフォールバック (旧データ動作維持用)。
