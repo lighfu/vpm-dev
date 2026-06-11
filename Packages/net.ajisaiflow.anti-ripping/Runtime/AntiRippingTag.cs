@@ -154,6 +154,16 @@ namespace AjisaiFlow.AntiRipping
                  "OFF にすると BlendShape lock のみで保護される (shader 解析耐性は弱まる)。")]
         [SerializeField] private bool enableShaderLevelDecode = true;
 
+        [Tooltip("v0.37+: MeshRenderer を SkinnedMeshRenderer に build 時に型変換し、 BlendShape 経路で\n" +
+                 "mesh-level scramble する。 MR の Safety Mode 対応 (= custom shader 無効化時も形状復元) が完全化される。\n" +
+                 "対象: lockable shader (lilToon / Poiyomi 系) を持つ MeshRenderer のみ。 非対応 shader の MR は変換されない。\n" +
+                 "変換ロジック: Mesh を clone + 全頂点 weight=1.0 で root bone bind + bindposes=identity +\n" +
+                 "SMR component 追加 (Renderer base prop 完全コピー) + 元 MR/MeshFilter Destroy。\n" +
+                 "副作用: VRChat Performance Stat の SMR 数が増え、 Rank downgrade のリスクあり (Quest では特に影響大)。\n" +
+                 "build 時に Rank 計算し downgrade した場合は ARLog.Warn で警告ログ出力。\n" +
+                 "default OFF (= opt-in)。 Quest 向け build にも適用される (ユーザー責任で判断)。")]
+        [SerializeField] private bool enableMeshRendererToSkinnedConversion = false;
+
         [Tooltip("Shader-level Decode で追加でロック対象に含めたい shader 名 (部分一致、大文字小文字無視)。\n" +
                  "例: 'XSToon'、'Sunao'。\n" +
                  "lilToon / Poiyomi 派生は自動検出されるのでここに書く必要は無い。\n" +
@@ -169,6 +179,19 @@ namespace AjisaiFlow.AntiRipping
                  "(自動検出: lilToon 公式 package 配下でない 'lilToon' を含む shader は自動的に skip される。\n" +
                  " このリストは自動検出で拾えない shader への手動 override。)")]
         [SerializeField] private string[] excludeFromShaderLock = new string[0];
+
+        // v0.37.8: テクスチャ暗号化からマテリアル単位で除外する list。
+        // 除外された material は shader-lock は通常通り通る (= mesh-level 保護維持) が、 texture pixel encryption は
+        // skip される (= 元 texture が AssetBundle に焼かれて leak 可能、 visual は安定)。
+        // 用途: MatCap 等の微調整 texture で暗号化精度損失が visual に影響する material を leak 許容で除外したいケース。
+        // 元 (src) material reference で比較する (= avatar prefab に貼られている original material)。
+        [Tooltip("v0.37.8+: テクスチャ暗号化から除外する material (= leak 許容)。\n" +
+                 "指定した material は shader-lock は通常通り通る (= mesh-level 保護維持) が、 texture pixel\n" +
+                 "encryption が skip され、 元テクスチャが AssetBundle にそのまま焼かれる (= AssetRipper で抽出可能)。\n" +
+                 "用途: MatCap 等の微調整テクスチャで暗号化精度損失による visual 違和感を leak 許容で回避したいケース。\n" +
+                 "重要: 列挙した material の **全テクスチャ** が leak 対象になる。 main color texture も含まれる場合は\n" +
+                 "保護効果が大幅に下がるため慎重に検討してください。")]
+        [SerializeField] private Material[] excludeFromTextureEncryption = new Material[0];
 
         // ────────────────────────────── Texture Pixel Encryption (v0.31, 実験的) ──────────────────────────────
 
@@ -362,6 +385,13 @@ namespace AjisaiFlow.AntiRipping
                  "GameObject 難読化と同じく NDMF AnimatorServicesContext 経由で全 plugin の clip も rewrite される。")]
         [SerializeField] private bool enableBlendShapeObfuscation = false;
 
+        [Tooltip("v0.37+: BlendShape 難読化 ON 時に MMD ワールド用の標準モーフ (= あ / い / う / え / お / ω / にこり / まばたき / ハイライト消し 等) を\n" +
+                 "rename 対象から除外する (= 順序シャッフルには参加するが名前は元のまま維持される)。\n" +
+                 "MMD DanceController は BlendShape 名で SetBlendShapeWeight を呼ぶため、 rename されると MMD ワールドで表情が動かなくなる。\n" +
+                 "また 「-------MMD-------」「=======MMD=======」 等の section divider (= 名前に「MMD」 を含む BS) も自動的に除外される。\n" +
+                 "default ON (= MMD 互換性を確保)。 OFF にすると従来挙動 (= 全 BS rename、 MMD 表情が壊れる) になる。")]
+        [SerializeField] private bool excludeMmdBlendShapes = true;
+
         [Tooltip("v0.21+: ビルド時に AnimatorController の Layer 名 / State 名 / StateMachine 名 / Parameter 名を\n" +
                  "_<16hex> にランダム rename する。 Transition condition / VRCAvatarParameterDriver / VRCExpressionParameters /\n" +
                  "VRCExpressionsMenu / MA ModularAvatarParameters の参照は全て同期 rewrite される。\n" +
@@ -369,6 +399,14 @@ namespace AjisaiFlow.AntiRipping
                  "(K0..K7 / LockNow / Broadcast / Score / One) は rename 対象から除外され機能に影響しない。\n" +
                  "Optimizing phase で実行されるため MA / FaceEmo / lilycal-Inventory 等の controller も全て覆われる。")]
         [SerializeField] private bool enableAnimatorObfuscation = false;
+
+        [Tooltip("v0.37+: Animator パラメータ難読化 ON 時に VRCOSC (心拍計 / SpeechToText 等の外部 OSC アプリ) が\n" +
+                 "書き込むパラメータ (= 名前が「VRCOSC/」 で始まるもの、 例: VRCOSC/Heartrate/Average 等) を\n" +
+                 "rename 対象から除外する。\n" +
+                 "VRCOSC アプリは外部から OSC で /avatar/parameters/VRCOSC/Heartrate/Average 等を送信するため、\n" +
+                 "rename されると avatar 側で受信できず心拍計などが機能停止する。\n" +
+                 "default ON (= VRCOSC 互換性を確保)。 OFF にすると従来挙動 (= 全 param rename、 VRCOSC が壊れる)。")]
+        [SerializeField] private bool excludeVrcOscParameters = true;
 
         [Tooltip("v0.36+: ON で Animator パラメータ難読化を決定論的 (再現可能) にする。\n" +
                  "同じ元パラメータ名は常に同じ難読名になり、PC と Quest を別々にビルドしても一致する。\n" +
@@ -466,6 +504,22 @@ namespace AjisaiFlow.AntiRipping
         [Tooltip("ビルド時に Console へ詳細ログを出すか")]
         [SerializeField] private bool verboseLogging = false;
 
+        // v0.37.8: 生成 shader を build 間で保持して Unity ShaderCache を有効化 (= build 高速化 opt-in)。
+        // 通常は build 終了時に Generated/Shaders/_AR_*.shader が全削除されるため、 次 build で
+        // Unity は新 shader 扱いで全 variant を 1 から compile し直す (= 多 material avatar で数十分)。
+        // このトグル ON で sweep を skip し、 同じ shader 内容なら Unity が cache hit して compile を
+        // 数分単位に短縮する。 trade-off: locked shader file が disk に残るため、 attacker が
+        // shader 構造を解析可能になる (ただし texture 復号には _AR_TK0..3 = Animator AAP score が
+        // 必要なため、 shader 抽出だけでは texture 復号は不可)。 開発時のみ ON 推奨、 release build
+        // (= 配布版 publish) では OFF 必須。
+        [Tooltip("生成シェーダーをビルド間で保持してビルド時間を短縮 (開発時のみ ON 推奨)\n" +
+                 "効果: Unity ShaderCache が hit し shader compile が大幅短縮 (= 多 material avatar で数十分→数分)。\n" +
+                 "trade-off: locked shader file が Generated/Shaders/_AR_*.shader として disk に残り、\n" +
+                 "解析者が shader 構造を読める。 ただし texture 復号には Animator AAP score 累積が必要なため、\n" +
+                 "shader 単体抽出では texture は復号できない (= protection が完全に失われるわけではない)。\n" +
+                 "publish 用 build (= 配布) では OFF 必須。")]
+        [SerializeField] private bool keepGeneratedShadersBetweenBuilds = false;
+
         // ────────────────────────────── プロパティ ──────────────────────────────
 
         public string CreatorName => creatorName;
@@ -501,6 +555,12 @@ namespace AjisaiFlow.AntiRipping
         public bool HasMeshLockHolderObjectName => !string.IsNullOrEmpty(meshLockHolderObjectName);
 
         public bool EnableShaderLevelDecode => enableShaderLevelDecode;
+
+        // v0.37+: MR→SMR 変換 toggle (= lockable shader を持つ MR を build 時に SMR 化)。
+        // EnableShaderLevelDecode との AND を取る (= shader-level decode OFF 時は変換しても意味がない)。
+        public bool EnableMeshRendererToSkinnedConversion =>
+            enableMeshRendererToSkinnedConversion && enableShaderLevelDecode;
+
         public string[] ExtraShaderNamesToLock => extraShaderNamesToLock ?? new string[0];
         public string[] ExcludeFromShaderLock => excludeFromShaderLock ?? new string[0];
 
@@ -542,9 +602,21 @@ namespace AjisaiFlow.AntiRipping
         ///  - それ以外: 該当 TextureFormat (BC7 / DXT5 / DXT1 / ETC2_RGBA8 / ASTC_RGBA_4x4)
         /// 呼び出し側 (TextureFormatHelper.CreateEncryptedTexture) は null なら圧縮 skip、
         /// それ以外なら EditorUtility.CompressTexture(target, format, Best) を呼ぶ。
+        ///
+        /// v0.37.8: XorSortMapping mode OFF のときは <strong>強制 Uncompressed</strong>。
+        /// 理由: ValueXor mode + 任意圧縮形式 (BC7/BC3/BC1/ETC2/ASTC) は XOR amplification で
+        /// モザイクノイズ発生する致命的組合せ。 XorSortMapping mode は sort + 6-bit rounded 設計で
+        /// BC7 ε ≈ 0 を構造保証するため、 圧縮との両立が成立する。
+        /// enum 値は保存したまま (= XorSortMapping mode を後で ON 復帰したら元の選択値が自動復活)。
         /// </summary>
         public TextureFormat? GetEncryptedTextureCompressionFormat()
         {
+            // v0.37.8 構造的 safety gate: XorSortMapping mode OFF なら無条件 Uncompressed。
+            if (!useTextureXorSortMappingMode)
+            {
+                return null;
+            }
+
             var mode = encryptedTextureCompression;
             // AutoFromToggle: 旧 bool に従う (BC7 ON → BC7、 OFF → 圧縮なし)
             if (mode == EncryptedTextureCompression.AutoFromToggle)
@@ -571,6 +643,12 @@ namespace AjisaiFlow.AntiRipping
         {
             get
             {
+                // v0.37.8: XorSortMapping mode OFF なら強制 Uncompressed (= GetEncryptedTextureCompressionFormat と同じ logic)
+                if (!useTextureXorSortMappingMode)
+                {
+                    return EncryptedTextureCompression.Uncompressed;
+                }
+
                 var mode = encryptedTextureCompression;
                 if (mode == EncryptedTextureCompression.AutoFromToggle)
                 {
@@ -588,7 +666,14 @@ namespace AjisaiFlow.AntiRipping
         public int FallbackPlaceholderResolution => Mathf.Clamp(fallbackPlaceholderResolution, 16, 256);
         public bool EnableGameObjectObfuscation => enableGameObjectObfuscation;
         public bool EnableBlendShapeObfuscation => enableBlendShapeObfuscation;
+
+        // v0.37+: MMD 標準モーフを BlendShape 難読化対象から除外 (default ON、 MMD 互換性確保)
+        public bool ExcludeMmdBlendShapes => excludeMmdBlendShapes;
         public bool EnableAnimatorObfuscation => enableAnimatorObfuscation;
+
+        // v0.37+: VRCOSC 等の外部 OSC アプリの parameter を Animator 難読化対象から除外 (default ON)
+        public bool ExcludeVrcOscParameters => excludeVrcOscParameters;
+
         public bool DeterministicObfuscation => deterministicObfuscation;
         public string ObfuscationSeedHex => obfuscationSeedHex ?? "";
         public bool EnableAssetNameObfuscation => enableAssetNameObfuscation;
@@ -684,6 +769,26 @@ namespace AjisaiFlow.AntiRipping
         }
 
         public bool VerboseLogging => verboseLogging;
+
+        public bool KeepGeneratedShadersBetweenBuilds => keepGeneratedShadersBetweenBuilds;
+
+        public Material[] ExcludeFromTextureEncryption => excludeFromTextureEncryption ?? new Material[0];
+
+        /// <summary>
+        /// v0.37.8: src material が ExcludeFromTextureEncryption list に含まれているか判定。
+        /// 含まれていれば texture pixel encryption を skip する (= shader-lock は通常通り通る、 mesh-level 保護維持)。
+        /// reference 比較で、 prefab に貼られている original material のみマッチする (= clone 後の locked variant は別 reference)。
+        /// </summary>
+        public bool IsTextureEncryptionExcluded(Material srcMat)
+        {
+            if (srcMat == null || excludeFromTextureEncryption == null || excludeFromTextureEncryption.Length == 0)
+                return false;
+            for (int i = 0; i < excludeFromTextureEncryption.Length; i++)
+            {
+                if (excludeFromTextureEncryption[i] == srcMat) return true;
+            }
+            return false;
+        }
 
         public bool HasMinimalConfig() => !string.IsNullOrWhiteSpace(creatorName);
 
