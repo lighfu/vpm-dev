@@ -42,6 +42,9 @@ namespace AjisaiFlow.AntiRipping
         [Tooltip("ビルドごとに固有 ID を生成し、流出時の追跡に使えるレポートを Assets/紫陽花広場/anti-ripping/Logs~/ に書き出す")]
         [SerializeField] private bool enableBuildFingerprint = true;
 
+        [Tooltip("ビルド終了時に NDMF レポートウィンドウへ難読化サマリ・失敗・スキップ要素を表示する。ONだと毎ビルド後にウィンドウが自動で開く")]
+        [SerializeField] private bool showBuildReportInNdmf = true;
+
         // ────────────────────────────── 表示阻止 (v0.2) ──────────────────────────────
         // v0.3 で撤廃した enableMeshLock トグルを v0.34.20 で再導入。
         // スコープは MeshLockPass の BlendShape 頂点 scramble のみ。
@@ -52,13 +55,6 @@ namespace AjisaiFlow.AntiRipping
                  "それぞれの toggle (enableShaderLevelDecode / enableTexturePixelEncryption) で個別に制御される。\n" +
                  "頂点散乱を切ると AABB が膨らまない一方、 BlendShape 経路の解錠耐性は失われる。")]
         [SerializeField] private bool enableMeshLock = true;
-
-        [Tooltip("collapse-to-point の収束点まわりの微小ジッタ距離 (メートル)。\n" +
-                 "ロック中は描画停止 (m_Enabled=0) されるため bounds は元メッシュ境界のままで AABB は肥大しない。\n" +
-                 "force-enable 時は頂点が一点に収束 (collapse-to-point) し面積ゼロの縮退三角形になる (overdraw ほぼゼロ)。\n" +
-                 "この値は収束点まわりの微小ジッタ (保険) のみに影響する。")]
-        [Range(0.05f, 2.0f)]
-        [SerializeField] private float meshLockScrambleRadius = 0.05f;
 
         [Tooltip("ON: VRChat の保存パラメータに OSC で 1 回書けば次回以降自動復元 (推奨)\n" +
                  "OFF: 毎セッション AntiRippingClient による OSC 送信が必要 (より安全)")]
@@ -144,11 +140,14 @@ namespace AjisaiFlow.AntiRipping
 
         [Tooltip("v0.13+: シェーダーレベル復号 (default: ON)。\n" +
                  "lilToon / Poiyomi のソース shader をコピー + textual injection で locked variant を生成し、\n" +
-                 "頂点 shader 内で UV6/UV7 と _AR_K0..3 から直接復号する。\n" +
+                 "shader 内でテクスチャを復号する (_AR_TK0..3 駆動の LIL_SAMPLE_2D wrapper 経路)。\n" +
                  "見た目は元 shader (lilToon / Poiyomi) と完全に同じまま、\n" +
-                 "AnimatorController を解析されても鍵は露出せず、メッシュに復元情報が残らない。\n" +
-                 "対応 shader が無い material や multi-material renderer は BlendShape lock に自動フォールバック。\n" +
-                 "OFF にすると BlendShape lock のみで保護される (shader 解析耐性は弱まる)。")]
+                 "AnimatorController を解析されても鍵は露出しない。\n" +
+                 "テクスチャ暗号化 (enableTexturePixelEncryption) はこのトグルとの AND で有効になる。\n" +
+                 "v0.37.2 以降、 lilToon の locked variant は頂点 (mesh) 復号を行わない (_AR_K0..3 は dead uniform)。\n" +
+                 "mesh の散乱と復元は MeshLockPass の BlendShape Unlock が担う (Poiyomi のみ頂点復号を持つ)。\n" +
+                 "対応 shader が無い material は shader-lock 対象外 (元 material 維持)。\n" +
+                 "OFF にすると BlendShape lock のみで保護され、 テクスチャ暗号化も動かない。")]
         [SerializeField] private bool enableShaderLevelDecode = true;
 
         [Tooltip("v0.37+: MeshRenderer を SkinnedMeshRenderer に build 時に型変換し、 BlendShape 経路で\n" +
@@ -563,9 +562,12 @@ namespace AjisaiFlow.AntiRipping
         public bool EnableAssetWatermark => enableAssetWatermark;
         public bool EnableHierarchyWatermark => enableHierarchyWatermark;
         public bool EnableBuildFingerprint => enableBuildFingerprint;
+        public bool ShowBuildReportInNdmf => showBuildReportInNdmf;
 
         public bool EnableMeshLock => enableMeshLock;
-        public float MeshLockScrambleRadius => meshLockScrambleRadius;
+        // v0.49: メッシュ崩しの強さは 0.1m 固定 (設定 UI から撤去)。 旧 meshLockScrambleRadius 直列化フィールドは廃止。
+        //   MeshLockPass の BlendShape 頂点 scramble 半径 / ShaderLockPass の UV displacement magnitude (×2.0) の基準値。
+        public float MeshLockScrambleRadius => 0.1f;
         public bool MeshLockKeySaved => meshLockKeySaved;
         public bool AutoExcludeSpsDpsFromMeshLock => autoExcludeSpsDpsFromMeshLock;
         public bool AutoExcludePlugFromShaderLock => autoExcludePlugFromShaderLock;
