@@ -1,24 +1,20 @@
-# Ajisaiflow VPM - Dev channel
+# Ajisaiflow VPM - Dev channel（廃止）
 
-AjisaiFlow パッケージの開発 (dev) チャンネル VPM listing。
-dev パッケージの保管 (GitHub Releases) と listing 公開 (GitHub Pages) を兼ねる自己完結リポジトリ。
+> [!WARNING]
+> この dev チャンネルは廃止しました。更新は 2026-07-09（Anti-Ripping v0.49.0）が最後で、今後も更新しません。
+> listing（`https://lighfu.github.io/vpm-dev/index.json`）の配信も停止しています。
 
-## VCC / ALCOM への追加
+## 移行先
 
-Add Repository に以下の Listing URL を貼り付ける:
+stable チャンネルを使ってください。
 
-    https://lighfu.github.io/vpm-dev/index.json
+- ワンクリックで追加: https://lighfu.github.io/vpm/add-repo.html
+- 手動で追加する場合の Listing URL: `https://lighfu.github.io/vpm/index.json`
+- ランディングページ: https://lighfu.github.io/vpm/
 
-ランディングページ: https://lighfu.github.io/vpm-dev/
+VCC / ALCOM にこの dev リポジトリを登録したままの場合は、削除してから stable を追加してください。
+dev にしかないバージョン（例: Anti-Ripping 0.49.0、UnityAgent 0.3.18〜0.3.20）を使っているプロジェクトは、stable の新しいバージョンに上げてください。
 
-## チャンネル
+## リリース
 
-- stable : https://lighfu.github.io/vpm/
-- dev (this repo) : https://lighfu.github.io/vpm-dev/
-
-## 仕組み
-
-source.json が listing 設定 (githubRepos に自身を指定)。
-.github/workflows/build-listing.yml が vrchat-community/package-list-action で
-GitHub Releases を走査して index.json を生成し、Website/ テンプレートと共に GitHub Pages へ配信する。
-release は release.py --channel dev が作成し、完了時に repository_dispatch (dev-release) で本 workflow を起動する。
+過去のリリース（GitHub Releases）は参照用に残しています。
